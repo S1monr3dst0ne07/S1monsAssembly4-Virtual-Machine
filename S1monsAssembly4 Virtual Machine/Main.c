@@ -4,7 +4,9 @@
 #include <errno.h>
 
 #define FILE_BUFFER_SiZE 256
-#define ATTR_BUFFER_SIZE 2048
+#define MAPPER_SIZE      2048
+
+#define ArraySize(x) sizeof(x) / sizeof(x[0])
 
 #pragma warning(disable : 4996) //_CRT_SECURE_NO_WARNINGS
 
@@ -13,6 +15,7 @@ typedef struct
     int inst;
     char* attr;
     int lineNum;
+    int conLine;
 
 } LINE;
 
@@ -55,6 +58,22 @@ enum
     ahm,
     fhm
 };
+
+
+
+
+int findIndex(const char* sourceArray[], const char* targetChar)
+{
+    for (int i = 0; i < ArraySize(sourceArray); i++)
+    {
+        char* currentIndex = sourceArray[i];
+        if (strcmp(currentIndex, targetChar) != 0) return i;
+
+    }
+
+    return NULL;
+}
+
 
 
 
@@ -101,7 +120,8 @@ int main(int argc, char** argv)
     int lineIndex = 0;
     int attrBufferIndex = 0;
     char *inst, *attr, *attrNew;
-    char* attrBuffer[ATTR_BUFFER_SIZE];
+    char* attrMapper[MAPPER_SIZE];
+    int lineMapper[MAPPER_SIZE];
 
     while (fgets(buffer, FILE_BUFFER_SiZE - 1, filePtr))
     {
@@ -125,6 +145,7 @@ int main(int argc, char** argv)
 
 
             int instNum = NULL;
+            int index, targetLine;
 
             /**/ if (strcmp(inst, "set") == 0)      instNum = set;
             else if (strcmp(inst, "add") == 0)      instNum = add;
@@ -149,20 +170,48 @@ int main(int argc, char** argv)
 
             else if (strcmp(inst, "lab") == 0)
             {
-                attrBuffer[attrBufferIndex++] = attrNew;
-            
+                lineMapper[attrBufferIndex] = lineIndex;
+                attrMapper[attrBufferIndex] = attrNew;
                 instNum = lab;
+
+                attrBufferIndex++;
             }
             
 
-            else if (strcmp(inst, "got") == 0)      instNum = got;
-            else if (strcmp(inst, "jm0") == 0)      instNum = jm0;
-            else if (strcmp(inst, "jmA") == 0)      instNum = jmA;
-            else if (strcmp(inst, "jmG") == 0)      instNum = jmG;
-            else if (strcmp(inst, "jmL") == 0)      instNum = jmL;
-            else if (strcmp(inst, "jmS") == 0)      instNum = jmS;
+            else if (strcmp(inst, "got") == 0)
+            {
+                lineBuffer[lineIndex].conLine = lineMapper[findIndex((const)attrMapper, attrNew)];
+                instNum = got;
+            }
+            else if (strcmp(inst, "jm0") == 0)
 
-            else if (strcmp(inst, "ret") == 0)      instNum = ret;
+            {
+                lineBuffer[lineIndex].conLine = lineMapper[findIndex((const)attrMapper, attrNew)];
+                instNum = jm0;
+            }
+            else if (strcmp(inst, "jmA") == 0)
+            {
+                lineBuffer[lineIndex].conLine = lineMapper[findIndex((const)attrMapper, attrNew)];
+                instNum = jmA;
+            }
+            else if (strcmp(inst, "jmG") == 0)
+            {
+                lineBuffer[lineIndex].conLine = lineMapper[findIndex((const)attrMapper, attrNew)];
+                instNum = jmG;
+            }
+            else if (strcmp(inst, "jmL") == 0)
+            {
+                lineBuffer[lineIndex].conLine = lineMapper[findIndex((const)attrMapper, attrNew)];
+                instNum = jmL;
+            }
+            else if (strcmp(inst, "jmS") == 0)
+            {
+                lineBuffer[lineIndex].conLine = lineMapper[findIndex((const)attrMapper, attrNew)];
+                instNum = jmS;
+            }
+
+
+            else if (strcmp(inst, "ret") == 0)      instNum = ret;            
             else if (strcmp(inst, "pha") == 0)      instNum = pha;
             else if (strcmp(inst, "pla") == 0)      instNum = pla;
             else if (strcmp(inst, "brk") == 0)      instNum = brk;
@@ -199,7 +248,8 @@ int main(int argc, char** argv)
     for (int i = 0; i < attrBufferIndex; i++)
     {
 
-        printf("Array: %s\n", attrBuffer[i]);
+        printf("AttrMapper: %s\n", attrMapper[i]);
+        printf("LineMapper: %d\n", lineMapper[i]);
     }
 
 
