@@ -3,11 +3,14 @@
 #include <string.h>
 #include <errno.h>
 
+#include <SDL.h>
+
 #define FILE_BUFFER_SiZE    256
 #define MAPPER_SIZE         2048
 #define MEM_SIZE            65535
 #define STACK_SIZE          2048
 #define ATTR_SIZE           256
+#define STRING_BUFFER       1024
 
 #define ArraySize(x) sizeof(x) / sizeof(x[0])
 
@@ -62,12 +65,45 @@ enum
     clr,
     putstr,
     ahm,
-    fhm
+    fhm,
+    plugin,
 };
 
 
 
 
+
+
+//this function will pop from the stack, just for convenience
+int _PopStack(int* stack, int* stackPtr)
+{
+    return stack[--*stackPtr];
+}
+
+
+char* _GetString(int* mem, int ptr)
+{
+    int scanPtr = ptr;
+    int size = 0;
+
+    while (mem[scanPtr++]) size++;
+    
+    char* stringBuffer = malloc((size + 1) * sizeof(char));
+    stringBuffer[size] = 0;
+
+    int index = 0;
+    while (mem[ptr])
+    {
+        stringBuffer[index++] = mem[ptr];
+
+        ptr++;
+    }
+
+    return stringBuffer;
+}
+
+
+//function to find index of element in array
 int findIndex(const char* sourceArray[], const char* targetChar, const int size)
 {
     for (int i = 0; i < size; i++)
@@ -106,6 +142,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "Error while loading file");
         return 1;
     }
+
 
 
     //count number real line in file
@@ -210,31 +247,12 @@ int main(int argc, char** argv)
             }
             
 
-            else if (strcmp(inst, "got") == 0)
-            {
-                instNum = got;
-            }
-            else if (strcmp(inst, "jm0") == 0)
-
-            {
-                instNum = jm0;
-            }
-            else if (strcmp(inst, "jmA") == 0)
-            {
-                instNum = jmA;
-            }
-            else if (strcmp(inst, "jmG") == 0)
-            {
-                instNum = jmG;
-            }
-            else if (strcmp(inst, "jmL") == 0)
-            {
-                instNum = jmL;
-            }
-            else if (strcmp(inst, "jmS") == 0)
-            {
-                instNum = jmS;
-            }
+            else if (strcmp(inst, "got") == 0) instNum = got;
+            else if (strcmp(inst, "jm0") == 0) instNum = jm0;
+            else if (strcmp(inst, "jmA") == 0) instNum = jmA;
+            else if (strcmp(inst, "jmG") == 0) instNum = jmG;
+            else if (strcmp(inst, "jmL") == 0) instNum = jmL;
+            else if (strcmp(inst, "jmS") == 0) instNum = jmS;
 
 
             else if (strcmp(inst, "ret") == 0)      instNum = ret;            
@@ -245,6 +263,7 @@ int main(int argc, char** argv)
             else if (strcmp(inst, "putstr") == 0)   instNum = putstr;
             else if (strcmp(inst, "ahm") == 0)      instNum = ahm;
             else if (strcmp(inst, "fhm") == 0)      instNum = fhm;
+            else if (strcmp(inst, "plugin") == 0)   instNum = plugin;
 
             else
             {
@@ -285,15 +304,28 @@ int main(int argc, char** argv)
         }
     }
 
-    //now finally run with lightspeed
-    unsigned short int acc = 0;
-    unsigned short int reg = 0;
 
-    unsigned short int mem[MEM_SIZE]     = { 0 };
-    unsigned short int stack[STACK_SIZE] = { 0 };
+
+
+    //SDL stuff
+    SDL_Event sdlEvent;
+    SDL_Window* sdlWindow       = NULL;
+    SDL_Renderer* sdlRenderer   = NULL;
+    SDL_Init(SDL_INIT_VIDEO);
+
+
+
+
+    //now finally run with lightspeed
+    unsigned int acc = 0;
+    unsigned int reg = 0;
+
+    unsigned int mem[MEM_SIZE]     = { 0 };
+    unsigned int stack[STACK_SIZE] = { 0 };
     int stackPtr = 0;
 
     char outputBuffer[2] = "";
+    FILE* filePluginPtr = NULL;
 
 
     for (int execPtr = 0; execPtr < lineCount; execPtr++)
@@ -433,6 +465,65 @@ int main(int argc, char** argv)
             case putstr:
                 outputBuffer[0] = (char)acc;
                 printf("%s", &outputBuffer);
+                break;
+
+            case plugin:
+                //im mot parsing the plugins, because they should not be called as often as normal commands
+
+                /**/ if (strcmp(runAttr, "File::Read") == 0)
+                {
+                    int ptr = _PopStack(stack, &stackPtr);
+                    char* path = _GetString(mem, ptr);
+
+                    filePluginPtr = fopen(path, "rb");
+                    if (filePluginPtr == NULL)
+                    {
+                        fprintf(stderr, "Error while loading file via plugin\n");
+                        return 1;
+                    }
+                }
+                else if (strcmp(runAttr, "File::Buffer2Stack") == 0)
+                {
+                    if (filePluginPtr != NULL)
+                    {
+                        stack[stackPtr++] = (unsigned int)fgetc(filePluginPtr);
+                    }
+
+                }
+
+                else if (strcmp(runAttr, "Screen::WinInit") == 0)
+                {
+                    int windowHeight = _PopStack(stack, &stackPtr);
+                    int windowWidth = _PopStack(stack, &stackPtr);
+
+                    SDL_CreateWindowAndRenderer(windowWidth, windowHeight, 0, &sdlWindow, &sdlRenderer);
+                }
+                else if (strcmp(runAttr, "Screen::WinExit") == 0)
+                {
+                    while (1) {
+                        if (SDL_PollEvent(&sdlEvent) && sdlEvent.type == SDL_QUIT) break;
+                    }
+                }
+                else if (strcmp(runAttr, "Screen::Draw") == 0)
+                {
+                    int windowIndexY = _PopStack(stack, &stackPtr);
+                    int windowIndexX = _PopStack(stack, &stackPtr);
+                    int windowB      = _PopStack(stack, &stackPtr);
+                    int windowG      = _PopStack(stack, &stackPtr);
+                    int windowR      = _PopStack(stack, &stackPtr);
+
+                    SDL_SetRenderDrawColor(sdlRenderer, windowR, windowG, windowB, 255);
+                    SDL_RenderDrawPoint(sdlRenderer, windowIndexX, windowIndexY);
+                }
+                else if (strcmp(runAttr, "Screen::Update") == 0)
+                {
+                    SDL_RenderPresent(sdlRenderer);
+                }
+
+
+
+                break;
+
 
             default:
                 break;
@@ -444,9 +535,8 @@ int main(int argc, char** argv)
 
 
 
-
+    
     return 0;
 }
-
 
 
