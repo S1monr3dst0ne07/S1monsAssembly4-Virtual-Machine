@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 
+#include <windows.h>
 #include <SDL.h>
 
 #define FILE_BUFFER_SiZE    256
@@ -75,13 +76,13 @@ enum
 
 
 //this function will pop from the stack, just for convenience
-int _PopStack(int* stack, int* stackPtr)
+int _PopStack(short int* stack, int* stackPtr)
 {
-    return stack[--*stackPtr];
+    return (int)stack[--*stackPtr];
 }
 
 
-char* _GetString(int* mem, int ptr)
+char* _GetString(short int* mem, short int ptr)
 {
     int scanPtr = ptr;
     int size = 0;
@@ -317,11 +318,11 @@ int main(int argc, char** argv)
 
 
     //now finally run with lightspeed
-    unsigned int acc = 0;
-    unsigned int reg = 0;
+    unsigned short int acc = 0;
+    unsigned short int reg = 0;
 
-    unsigned int mem[MEM_SIZE]     = { 0 };
-    unsigned int stack[STACK_SIZE] = { 0 };
+    unsigned short int mem[MEM_SIZE]     = { 0 };
+    unsigned short int stack[STACK_SIZE] = { 0 };
     int stackPtr = 0;
 
     char outputBuffer[2] = "";
@@ -463,6 +464,8 @@ int main(int argc, char** argv)
                 break;
 
             case putstr:
+                &acc;
+
                 outputBuffer[0] = (char)acc;
                 printf("%s", &outputBuffer);
                 break;
@@ -470,10 +473,13 @@ int main(int argc, char** argv)
             case plugin:
                 //im mot parsing the plugins, because they should not be called as often as normal commands
 
-                /**/ if (strcmp(runAttr, "File::Read") == 0)
+                    if (strcmp(runAttr, "File::Read") == 0)
                 {
                     int ptr = _PopStack(stack, &stackPtr);
+                    printf("ptr: %d\n", ptr);
+
                     char* path = _GetString(mem, ptr);
+                    printf("path: %s\n", path);
 
                     filePluginPtr = fopen(path, "rb");
                     if (filePluginPtr == NULL)
@@ -502,6 +508,7 @@ int main(int argc, char** argv)
                 {
                     while (1) {
                         if (SDL_PollEvent(&sdlEvent) && sdlEvent.type == SDL_QUIT) break;
+                        Sleep(1);
                     }
                 }
                 else if (strcmp(runAttr, "Screen::Draw") == 0)
@@ -523,7 +530,6 @@ int main(int argc, char** argv)
 
 
                 break;
-
 
             default:
                 break;
