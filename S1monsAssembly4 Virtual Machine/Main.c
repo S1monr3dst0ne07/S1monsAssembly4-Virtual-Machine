@@ -3,6 +3,8 @@
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <time.h>
+#include <ctype.h>
 
 #include <windows.h>
 #include <SDL.h>
@@ -25,11 +27,18 @@
 
 typedef struct 
 {
+    //original command
     char* instOrg;
     char* attrOrg;
 
+    //parsed command
     int inst;
     char attr[ATTR_SIZE];
+
+    //parsed attr, if attr can be stored as int
+    int attrInt;
+
+    //error feedback
     int lineNum;
     int conLine;
 
@@ -93,7 +102,14 @@ enum
 
 
 
+int isOnlyDigits(const char* s)
+{
+    while (*s) {
+        if (isdigit(*s++) == 0) return 0;
+    }
 
+    return 1;
+}
 
 //this function will pop from the stack, just for convenience
 unsigned short int _PopStack(short int* stack, int* stackPtr)
@@ -144,6 +160,8 @@ int findIndex(const char* sourceArray[], const char* targetChar, const int size)
 
 int main(int argc, char** argv)
 {
+    clock_t beginTime = clock();
+
     if (argc < 2)
     {
         fprintf(stderr, "File Path not given\n");
@@ -224,12 +242,14 @@ int main(int argc, char** argv)
 
             if (attr != NULL)
             {
+                if (isOnlyDigits(attr)) lineBuffer[lineIndex].attrInt = atoi(attr);
                 strcpy(lineBuffer[lineIndex].attr, attr);
             }
             else
             {
                 memset(lineBuffer[lineIndex].attr, 0, ATTR_SIZE);
             }
+
 
 
 
@@ -313,6 +333,7 @@ int main(int argc, char** argv)
     int   runInst;
     char* runAttr;
 
+
     for (int i = 0; i < lineCount; i++)
     {
         LINE lineStruct = lineBuffer[i];
@@ -353,19 +374,21 @@ int main(int argc, char** argv)
     char outputBuffer[2] = "";
     FILE* filePluginPtr = NULL;
 
+    bool isRunning = 1;
+    int intAttr;
 
-    for (int execPtr = 0; execPtr < lineCount; execPtr++)
+    for (int execPtr = 0; execPtr < lineCount && isRunning; execPtr++)
     {
         LINE lineStruct = lineBuffer[execPtr];
 
         runInst = lineStruct.inst;
         runAttr = lineStruct.attr;
-
+        intAttr = lineStruct.attrInt;
 
         switch (runInst)
         {
             case set:
-                reg = (int)atoi(runAttr);
+                reg = intAttr;
                 break;
 
             case add:
@@ -399,40 +422,40 @@ int main(int argc, char** argv)
                 acc = ~acc;
 
             case lDA:
-                acc = mem[(int)atoi(runAttr)];
+                acc = mem[intAttr];
                 break;
 
             case lDR:
-                reg = mem[(int)atoi(runAttr)];
+                reg = mem[intAttr];
                 break;
 
             case sAD:
-                mem[(int)atoi(runAttr)] = acc;
+                mem[intAttr] = acc;
                 break;
 
             case sRD:
-                mem[(int)atoi(runAttr)] = reg;
+                mem[intAttr] = reg;
                 break;
 
 
             case lPA:
-                acc = mem[mem[(int)atoi(runAttr)]];
+                acc = mem[mem[intAttr]];
                 break;
 
             case lPR:
-                reg = mem[mem[(int)atoi(runAttr)]];
+                reg = mem[mem[intAttr]];
                 break;
 
             case sAP:
-                mem[mem[(int)atoi(runAttr)]] = acc;
+                mem[mem[intAttr]] = acc;
                 break;
 
             case sRP:
-                mem[mem[(int)atoi(runAttr)]] = reg;
+                mem[mem[intAttr]] = reg;
                 break;
 
             case out:
-                printf("%d\n", mem[atoi(runAttr)]);
+                printf("%d\n", mem[intAttr]);
                 break;
 
             case inp_asm:
@@ -480,8 +503,8 @@ int main(int argc, char** argv)
                 break;
 
             case brk:
-                exit(0);
-                break;
+                isRunning = 0;
+                continue;
 
             case clr:
                 acc = 0;
@@ -633,8 +656,11 @@ int main(int argc, char** argv)
     }
 
 
-
+    clock_t endTime = clock();
+    double timeSpent = (double)(endTime - beginTime) / CLOCKS_PER_SEC;
     
+    printf("Time spent: %lf", timeSpent);
+
     return 0;
 }
 
