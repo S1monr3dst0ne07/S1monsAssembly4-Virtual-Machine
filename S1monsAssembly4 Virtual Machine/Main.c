@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #include <windows.h>
 #include <SDL.h>
@@ -12,10 +13,15 @@
 #define STACK_SIZE          2048
 #define ATTR_SIZE           256
 #define STRING_BUFFER       1024
+#define CHUNK_LIST_SIZE     255
+
 
 #define ArraySize(x) sizeof(x) / sizeof(x[0])
 
 #pragma warning(disable : 4996) //_CRT_SECURE_NO_WARNINGS
+
+
+
 
 typedef struct 
 {
@@ -30,9 +36,23 @@ typedef struct
 } LINE;
 
 
+
+
+typedef struct
+{
+    int ptr;
+    int size;
+    bool isAlloced;
+
+
+} CHUNK;
+
+
+
+
 enum
 {
-    invaild,
+    invalid,
     set,
     add,
     sub,
@@ -76,15 +96,15 @@ enum
 
 
 //this function will pop from the stack, just for convenience
-int _PopStack(short int* stack, int* stackPtr)
+unsigned short int _PopStack(short int* stack, int* stackPtr)
 {
-    return (int)stack[--*stackPtr];
+    return stack[--*stackPtr];
 }
 
 
-char* _GetString(short int* mem, short int ptr)
+char* _GetString(short int* mem, unsigned short int ptr)
 {
-    int scanPtr = ptr;
+    unsigned short int scanPtr = ptr;
     int size = 0;
 
     while (mem[scanPtr++]) size++;
@@ -268,7 +288,10 @@ int main(int argc, char** argv)
 
             else
             {
-                instNum = invaild;
+                printf("Error, invalid command: %s", inst);
+                return 0;
+
+
             }
 
 
@@ -324,6 +347,8 @@ int main(int argc, char** argv)
     unsigned short int mem[MEM_SIZE]     = { 0 };
     unsigned short int stack[STACK_SIZE] = { 0 };
     int stackPtr = 0;
+
+    CHUNK chunkList[CHUNK_LIST_SIZE] = { 0 };
 
     char outputBuffer[2] = "";
     FILE* filePluginPtr = NULL;
@@ -464,10 +489,78 @@ int main(int argc, char** argv)
                 break;
 
             case putstr:
-                &acc;
+                
 
                 outputBuffer[0] = (char)acc;
                 printf("%s", &outputBuffer);
+                break;
+
+            case ahm:
+                //iterate the chunks to find place to fit new chunk
+
+                for (int i = 0; i < ArraySize(chunkList) - 1; i++)
+                {
+                    CHUNK iter = chunkList[i + 0];
+                    CHUNK next = chunkList[i + 1];
+
+                    int allocSize = reg;
+                    int endIter = (iter.ptr + iter.size);
+                    int iter2NextIntervalSize = next.ptr - endIter;
+                    
+                    //check if fitting interval has been found
+                    bool foundAlloc = 0;
+                    if (!next.isAlloced)
+                    {
+
+                        next.isAlloced  = 1;
+                        next.ptr        = endIter;
+                        next.size       = allocSize;
+
+                        //override acc with base ptr, add offset 
+                        acc = endIter | (1 << 15);
+                        
+                        foundAlloc = 1;
+                    }
+                    else if (iter2NextIntervalSize > allocSize)
+                    {
+
+                        foundAlloc = 1;
+                    }
+
+                    chunkList[i + 0] = iter;
+                    chunkList[i + 1] = next;
+
+                    /*
+                    if (foundAlloc)
+                    {
+                        printf("START PRINT\n");
+                        for (int i = 0; i < ArraySize(chunkList); i++)
+                        {
+                            CHUNK PrintIter = chunkList[i];
+                            if (PrintIter.ptr || PrintIter.size)
+                            {
+                                printf("Ptr:  %d\n", PrintIter.ptr);
+                                printf("Size: %d\n", PrintIter.size);
+
+
+                            }
+                        }
+                        printf("END PRINT\n");
+
+
+                    }
+                    */
+
+                    if (foundAlloc) break;
+
+
+                }
+
+                printf("ACC: %d\n", acc);
+                break;
+
+            case fhm:
+                
                 break;
 
             case plugin:
@@ -475,7 +568,7 @@ int main(int argc, char** argv)
 
                     if (strcmp(runAttr, "File::Read") == 0)
                 {
-                    int ptr = _PopStack(stack, &stackPtr);
+                    unsigned short int ptr = _PopStack(stack, &stackPtr);
                     printf("ptr: %d\n", ptr);
 
                     char* path = _GetString(mem, ptr);
@@ -499,8 +592,8 @@ int main(int argc, char** argv)
 
                 else if (strcmp(runAttr, "Screen::WinInit") == 0)
                 {
-                    int windowHeight = _PopStack(stack, &stackPtr);
-                    int windowWidth = _PopStack(stack, &stackPtr);
+                    unsigned int windowHeight = _PopStack(stack, &stackPtr);
+                    unsigned int windowWidth = _PopStack(stack, &stackPtr);
 
                     SDL_CreateWindowAndRenderer(windowWidth, windowHeight, 0, &sdlWindow, &sdlRenderer);
                 }
@@ -513,11 +606,11 @@ int main(int argc, char** argv)
                 }
                 else if (strcmp(runAttr, "Screen::Draw") == 0)
                 {
-                    int windowIndexY = _PopStack(stack, &stackPtr);
-                    int windowIndexX = _PopStack(stack, &stackPtr);
-                    int windowB      = _PopStack(stack, &stackPtr);
-                    int windowG      = _PopStack(stack, &stackPtr);
-                    int windowR      = _PopStack(stack, &stackPtr);
+                    unsigned int windowIndexY = _PopStack(stack, &stackPtr);
+                    unsigned int windowIndexX = _PopStack(stack, &stackPtr);
+                    unsigned int windowB      = _PopStack(stack, &stackPtr);
+                    unsigned int windowG      = _PopStack(stack, &stackPtr);
+                    unsigned int windowR      = _PopStack(stack, &stackPtr);
 
                     SDL_SetRenderDrawColor(sdlRenderer, windowR, windowG, windowB, 255);
                     SDL_RenderDrawPoint(sdlRenderer, windowIndexX, windowIndexY);
