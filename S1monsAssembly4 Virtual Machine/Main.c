@@ -49,13 +49,31 @@ typedef struct
 
 typedef struct
 {
-    int ptr;
-    int size;
+    unsigned int ptr;
+    unsigned int size;
     bool isAlloced;
 
 
 } CHUNK;
 
+void printChunkList(CHUNK chunkList[])
+{
+    printf("START CHUNK LIST\n");
+    for (int i = 0; i < CHUNK_LIST_SIZE; i++)
+    {
+        CHUNK iter = chunkList[i];
+        if (iter.isAlloced)
+        {
+            printf("Index: %d\n", i);
+            printf("    Ptr      : %d\n", iter.ptr);
+            printf("    Size     : %d\n", iter.size);
+        }
+
+    }
+    printf("END   CHUNK LIST\n");
+
+
+}
 
 
 
@@ -521,20 +539,46 @@ int main(int argc, char** argv)
             case ahm:
                 //iterate the chunks to find place to fit new chunk
 
+                printf("START AHM\n");
+                printChunkList(chunkList);
+
                 for (int i = 0; i < ArraySize(chunkList) - 1; i++)
                 {
                     CHUNK iter = chunkList[i + 0];
                     CHUNK next = chunkList[i + 1];
 
-                    int allocSize = reg;
-                    int endIter = (iter.ptr + iter.size);
-                    int iter2NextIntervalSize = next.ptr - endIter;
-                    
+                    unsigned int allocSize = reg;
+                    unsigned int endIter = (iter.ptr + iter.size);
+                    unsigned int iter2NextIntervalSize = next.ptr - endIter;
+                    //printf("iter2NextIntervalSize: %d\n", iter2NextIntervalSize);
+
                     //check if fitting interval has been found
                     bool foundAlloc = 0;
-                    if (!next.isAlloced)
-                    {
 
+                    //special case for index 0, becasue that index is never test to unalloced
+                    if (!iter.isAlloced && !i)
+                    {
+                        iter.isAlloced = 1;
+                        iter.ptr       = 0;
+                        iter.size      = allocSize;
+
+                        //override acc with base ptr
+                        acc = (1 << 15);
+
+                        foundAlloc = 1;
+                    }
+                    //check if i == 0 and the current chunk is alloced and the current pointer is not 0, meaning there is space infront of the first chunk
+                    else if (!i && iter.isAlloced && iter.ptr)
+                    {
+                        printf("Found space at 0 infornt of the first chunk\n");
+
+                        foundAlloc = 1;
+                    }
+
+                    //normal case for if the next element is unalloced
+                    else if (!next.isAlloced)
+                    {
+                        printf("found space at %d\n", i);
                         next.isAlloced  = 1;
                         next.ptr        = endIter;
                         next.size       = allocSize;
@@ -546,44 +590,70 @@ int main(int argc, char** argv)
                     }
                     else if (iter2NextIntervalSize > allocSize)
                     {
-
+                        printf("deez nuts\n");
                         foundAlloc = 1;
                     }
 
                     chunkList[i + 0] = iter;
                     chunkList[i + 1] = next;
 
-                    /*
-                    if (foundAlloc)
-                    {
-                        printf("START PRINT\n");
-                        for (int i = 0; i < ArraySize(chunkList); i++)
-                        {
-                            CHUNK PrintIter = chunkList[i];
-                            if (PrintIter.ptr || PrintIter.size)
-                            {
-                                printf("Ptr:  %d\n", PrintIter.ptr);
-                                printf("Size: %d\n", PrintIter.size);
-
-
-                            }
-                        }
-                        printf("END PRINT\n");
-
-
-                    }
-                    */
-
                     if (foundAlloc) break;
 
 
                 }
 
-                printf("ACC: %d\n", acc);
+                printf("END AHM\n");
+                printChunkList(chunkList);
+                printf("\n");
+
                 break;
 
-            case fhm:
+            //case statements are cursed (in c at least) 
+            case fhm: ;
+                unsigned int freeSize = reg;
+                unsigned int freeBase = acc & ~(1 << 15);
+
+                printf("START FHM\n");
+                printChunkList(chunkList);
+
+
+                //find the give chunk in the chunckList and reset it to be unallocated
+                bool foundMatching = 0;
+                for (int findMatchingIndex = 0; findMatchingIndex < ArraySize(chunkList); findMatchingIndex++)
+                {
+                    if (chunkList[findMatchingIndex].isAlloced &&
+                        chunkList[findMatchingIndex].ptr == freeBase &&
+                        chunkList[findMatchingIndex].size == freeSize)
+                    {
+                        //the list needs to stay in sorted order, all elements with a higher index need to be moved one back
+                        //untill an unallocated element is reached, to keep the array in sorted order and with not spaces
+
+                        //this is done be copying the next element to the current element's cell and than stepping forward
+                        //this also has the effect of clearing the current cell
+
+                        for (int moveIndex = findMatchingIndex; moveIndex < ArraySize(chunkList) - 1; moveIndex++)
+                        {
+                            chunkList[moveIndex].ptr = chunkList[moveIndex + 1].ptr;
+                            chunkList[moveIndex].size = chunkList[moveIndex + 1].size;
+                            chunkList[moveIndex].isAlloced = chunkList[moveIndex + 1].isAlloced;
+
+                            //if the end of alloced chunks is found, it's not need to continue, that would just move empty cell around
+                            if (!chunkList[moveIndex].isAlloced) break;
+                        }
+
+                        foundMatching = 1;
+                        break;
+                    }
+                }
                 
+
+                //throw error if no result has been found
+                if (!foundMatching) printf("Error: no matching chunk was found, while trying to free\n");
+
+                printf("END FHM\n");
+                printChunkList(chunkList);
+                printf("\n");
+
                 break;
 
             case plugin:
