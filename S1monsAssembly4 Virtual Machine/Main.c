@@ -15,7 +15,6 @@
 #define STACK_SIZE          2048
 #define ATTR_SIZE           256
 #define STRING_BUFFER       1024
-#define CHUNK_LIST_SIZE     255
 
 
 #define ArraySize(x) sizeof(x) / sizeof(x[0])
@@ -47,32 +46,66 @@ typedef struct
 
 
 
-typedef struct
+typedef struct chunklist
 {
     unsigned int ptr;
     unsigned int size;
-    bool isAlloced;
+    struct chunklist* next;
+
+} CHUNKLIST;
 
 
-} CHUNK;
-
-void printChunkList(CHUNK chunkList[])
+CHUNKLIST* findSpace(unsigned int neededSpace, CHUNKLIST* startChunk)
 {
-    printf("START CHUNK LIST\n");
-    for (int i = 0; i < CHUNK_LIST_SIZE; i++)
+
+    CHUNKLIST* iter = startChunk;
+
+    while (true)
     {
-        CHUNK iter = chunkList[i];
-        if (iter.isAlloced)
-        {
-            printf("Index: %d\n", i);
-            printf("    Ptr      : %d\n", iter.ptr);
-            printf("    Size     : %d\n", iter.size);
-        }
+        //check for end of list
+        if (iter->next == NULL) break;
+        
+        //check for space in between two chunks
+        unsigned int iterEndPtr = iter->ptr + iter->size;
+        unsigned int spaceIterEnd2Next = iter->next->ptr - iterEndPtr;
+        if (spaceIterEnd2Next >= neededSpace) break;
+
+        iter = iter->next;
+    }
+
+    return iter;
+
+
+}
+
+//finds the chunk that fits ptr and size, and returns the previouse in the list
+CHUNKLIST* findPrevChunkByPtrAndSize(unsigned int ptr, unsigned int size, CHUNKLIST* startChunk)
+{
+    CHUNKLIST* iter = startChunk;
+    CHUNKLIST* last = NULL;
+
+    while (iter)
+    {
+        if (iter->ptr == ptr && iter->size == size) return last; 
+        last = iter;
+        iter = iter->next;
+    }
+    
+    return NULL;
+}
+
+//recursive because lazy, bruh
+void printChunkList(CHUNKLIST* startChunk)
+{
+    if (startChunk)
+    {
+        printf("    Ptr:    %d\n", startChunk->ptr);
+        printf("    Size:   %d\n", startChunk->size);
+        printf("\n");
+
+        printChunkList(startChunk->next);
 
     }
-    printf("END   CHUNK LIST\n");
-
-
 }
 
 
@@ -387,7 +420,11 @@ int main(int argc, char** argv)
     unsigned short int stack[STACK_SIZE] = { 0 };
     int stackPtr = 0;
 
-    CHUNK chunkList[CHUNK_LIST_SIZE] = { 0 };
+    CHUNKLIST  baseInstance;
+    CHUNKLIST* startChunk = &baseInstance;
+    startChunk->ptr = 0;
+    startChunk->size = 0;
+    startChunk->next = NULL;
 
     char outputBuffer[2] = "";
     FILE* filePluginPtr = NULL;
@@ -473,7 +510,7 @@ int main(int argc, char** argv)
                 break;
 
             case out:
-                printf("%d\n", mem[intAttr]);
+                printf("Out: %d\n", mem[intAttr]);
                 break;
 
             case inp_asm:
@@ -536,123 +573,47 @@ int main(int argc, char** argv)
                 printf("%s", &outputBuffer);
                 break;
 
-            case ahm:
-                //iterate the chunks to find place to fit new chunk
+            //case statements are cursed (in c at least) 
+            case ahm: ;
+                unsigned int allocSize = reg;
+                
+                CHUNKLIST *insertBase = findSpace(allocSize, startChunk);
+                CHUNKLIST *newChunk = (CHUNKLIST*)malloc(sizeof(CHUNKLIST));
 
-                printf("START AHM\n");
-                printChunkList(chunkList);
+                //insert the new chunk into the link list
+                int newChunkBasePtr = insertBase->ptr + insertBase->size;
+                newChunk->ptr =  newChunkBasePtr;
+                newChunk->size = allocSize;
+                newChunk->next = insertBase->next;
 
-                for (int i = 0; i < ArraySize(chunkList) - 1; i++)
-                {
-                    CHUNK iter = chunkList[i + 0];
-                    CHUNK next = chunkList[i + 1];
+                //link the new chunk as the next for the insertBase, to fully insert the new chunk and override the last next (which now is the next->next)
+                insertBase->next = newChunk;
 
-                    unsigned int allocSize = reg;
-                    unsigned int endIter = (iter.ptr + iter.size);
-                    unsigned int iter2NextIntervalSize = next.ptr - endIter;
-                    //printf("iter2NextIntervalSize: %d\n", iter2NextIntervalSize);
-
-                    //check if fitting interval has been found
-                    bool foundAlloc = 0;
-
-                    //special case for index 0, becasue that index is never test to unalloced
-                    if (!iter.isAlloced && !i)
-                    {
-                        iter.isAlloced = 1;
-                        iter.ptr       = 0;
-                        iter.size      = allocSize;
-
-                        //override acc with base ptr
-                        acc = (1 << 15);
-
-                        foundAlloc = 1;
-                    }
-                    //check if i == 0 and the current chunk is alloced and the current pointer is not 0, meaning there is space infront of the first chunk
-                    else if (!i && iter.isAlloced && iter.ptr)
-                    {
-                        printf("Found space at 0 infornt of the first chunk\n");
-
-                        foundAlloc = 1;
-                    }
-
-                    //normal case for if the next element is unalloced
-                    else if (!next.isAlloced)
-                    {
-                        printf("found space at %d\n", i);
-                        next.isAlloced  = 1;
-                        next.ptr        = endIter;
-                        next.size       = allocSize;
-
-                        //override acc with base ptr, add offset 
-                        acc = endIter | (1 << 15);
-                        
-                        foundAlloc = 1;
-                    }
-                    else if (iter2NextIntervalSize > allocSize)
-                    {
-                        printf("deez nuts\n");
-                        foundAlloc = 1;
-                    }
-
-                    chunkList[i + 0] = iter;
-                    chunkList[i + 1] = next;
-
-                    if (foundAlloc) break;
-
-
-                }
-
-                printf("END AHM\n");
-                printChunkList(chunkList);
-                printf("\n");
+                acc = (unsigned int)newChunkBasePtr | (1 << 15);
 
                 break;
 
-            //case statements are cursed (in c at least) 
             case fhm: ;
                 unsigned int freeSize = reg;
                 unsigned int freeBase = acc & ~(1 << 15);
 
-                printf("START FHM\n");
-                printChunkList(chunkList);
+                //the previouse is needed to delete the next chunk from the list, because the next pointer of the previouse need to be overritten to exclude the chunk for the list
+                CHUNKLIST* foundPreviouseChunk = findPrevChunkByPtrAndSize(freeBase, freeSize, startChunk);
+                CHUNKLIST* foundChunk = NULL;
 
-
-                //find the give chunk in the chunckList and reset it to be unallocated
-                bool foundMatching = 0;
-                for (int findMatchingIndex = 0; findMatchingIndex < ArraySize(chunkList); findMatchingIndex++)
+                if (foundPreviouseChunk)
                 {
-                    if (chunkList[findMatchingIndex].isAlloced &&
-                        chunkList[findMatchingIndex].ptr == freeBase &&
-                        chunkList[findMatchingIndex].size == freeSize)
-                    {
-                        //the list needs to stay in sorted order, all elements with a higher index need to be moved one back
-                        //untill an unallocated element is reached, to keep the array in sorted order and with not spaces
+                    foundChunk = foundPreviouseChunk->next;
 
-                        //this is done be copying the next element to the current element's cell and than stepping forward
-                        //this also has the effect of clearing the current cell
+                    //exclude the foundChunk for the list, so it can be freed
+                    foundPreviouseChunk->next = foundChunk->next;
+                    free(foundChunk);
 
-                        for (int moveIndex = findMatchingIndex; moveIndex < ArraySize(chunkList) - 1; moveIndex++)
-                        {
-                            chunkList[moveIndex].ptr = chunkList[moveIndex + 1].ptr;
-                            chunkList[moveIndex].size = chunkList[moveIndex + 1].size;
-                            chunkList[moveIndex].isAlloced = chunkList[moveIndex + 1].isAlloced;
-
-                            //if the end of alloced chunks is found, it's not need to continue, that would just move empty cell around
-                            if (!chunkList[moveIndex].isAlloced) break;
-                        }
-
-                        foundMatching = 1;
-                        break;
-                    }
                 }
-                
-
-                //throw error if no result has been found
-                if (!foundMatching) printf("Error: no matching chunk was found, while trying to free\n");
-
-                printf("END FHM\n");
-                printChunkList(chunkList);
-                printf("\n");
+                else
+                {
+                    printf("Error: Chunk (ptr: %d, size: %d) could not be found", freeBase, freeSize);
+                }
 
                 break;
 
@@ -662,10 +623,7 @@ int main(int argc, char** argv)
                     if (strcmp(runAttr, "File::Read") == 0)
                 {
                     unsigned short int ptr = _PopStack(stack, &stackPtr);
-                    printf("ptr: %d\n", ptr);
-
                     char* path = _GetString(mem, ptr);
-                    printf("path: %s\n", path);
 
                     filePluginPtr = fopen(path, "rb");
                     if (filePluginPtr == NULL)
