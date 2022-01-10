@@ -27,15 +27,15 @@
 typedef struct 
 {
     //original command
-    char* instOrg;
-    char* attrOrg;
+    char instOrg[128];
+    char attrOrg[128];
 
     //parsed command
     int inst;
     char attr[ATTR_SIZE];
 
     //parsed attr, if attr can be stored as int
-    int attrInt;
+    unsigned short int attrInt;
 
     //error feedback
     int lineNum;
@@ -55,7 +55,7 @@ typedef struct chunklist
 } CHUNKLIST;
 
 
-CHUNKLIST* findSpace(unsigned int neededSpace, CHUNKLIST* startChunk)
+CHUNKLIST* findSpace(unsigned short int neededSpace, CHUNKLIST* startChunk)
 {
 
     CHUNKLIST* iter = startChunk;
@@ -67,8 +67,9 @@ CHUNKLIST* findSpace(unsigned int neededSpace, CHUNKLIST* startChunk)
         
         //check for space in between two chunks
         unsigned int iterEndPtr = iter->ptr + iter->size;
-        unsigned int spaceIterEnd2Next = iter->next->ptr - iterEndPtr;
-        if (spaceIterEnd2Next >= neededSpace) break;
+        unsigned int spaceIterEnd2Next = (iter->next->ptr) - iterEndPtr;
+        
+        if (spaceIterEnd2Next > neededSpace) break;
 
         iter = iter->next;
     }
@@ -268,37 +269,22 @@ int main(int argc, char** argv)
             inst = strtok(buffer, " ");
             attr = strtok(NULL, " ");
 
-            //DEBUG START
-            /*
-            char* attrOrg;
-            char* instOrg = malloc(sizeof(inst) + sizeof(char));
-            memset(instOrg, 0, sizeof(instOrg));
-            strcpy(instOrg, inst);
+            strcpy(lineBuffer[lineIndex].instOrg, inst);
 
+            lineBuffer[lineIndex].attrInt = 0;
             if (attr != NULL)
             {
-                attrOrg = malloc(sizeof(attr) + sizeof(char));
-                memset(attrOrg, 0, sizeof(attrOrg));
-                strcpy(attrOrg, attr);
-            }
-            else
-            {
-                attrOrg = NULL;
-            }
-
-            lineBuffer[lineIndex].instOrg = instOrg;
-            lineBuffer[lineIndex].attrOrg = attrOrg;
-            */
-            //DEBUG END
-
-            if (attr != NULL)
-            {
-                if (isOnlyDigits(attr)) lineBuffer[lineIndex].attrInt = atoi(attr);
+                if (isOnlyDigits(attr))
+                {
+                    lineBuffer[lineIndex].attrInt = atoi(attr);
+                }
                 strcpy(lineBuffer[lineIndex].attr, attr);
+                strcpy(lineBuffer[lineIndex].attrOrg, attr);
             }
             else
             {
                 memset(lineBuffer[lineIndex].attr, 0, ATTR_SIZE);
+                lineBuffer[lineIndex].attrOrg[0] = NULL;
             }
 
 
@@ -420,8 +406,7 @@ int main(int argc, char** argv)
     unsigned short int stack[STACK_SIZE] = { 0 };
     int stackPtr = 0;
 
-    CHUNKLIST  baseInstance;
-    CHUNKLIST* startChunk = &baseInstance;
+    CHUNKLIST* startChunk = (CHUNKLIST*)malloc(sizeof(CHUNKLIST));
     startChunk->ptr = 0;
     startChunk->size = 0;
     startChunk->next = NULL;
@@ -430,7 +415,7 @@ int main(int argc, char** argv)
     FILE* filePluginPtr = NULL;
 
     bool isRunning = 1;
-    int intAttr;
+    unsigned short int intAttr;
 
     for (int execPtr = 0; execPtr < lineCount && isRunning; execPtr++)
     {
@@ -439,6 +424,8 @@ int main(int argc, char** argv)
         runInst = lineStruct.inst;
         runAttr = lineStruct.attr;
         intAttr = lineStruct.attrInt;
+
+        //printf(": %s %s\n", lineStruct.instOrg, lineStruct.attrOrg);
 
         switch (runInst)
         {
@@ -472,9 +459,11 @@ int main(int argc, char** argv)
 
             case xor:
                 acc ^= reg;
+                break;
 
             case not:
                 acc = ~acc;
+                break;
 
             case lDA:
                 acc = mem[intAttr];
@@ -510,7 +499,7 @@ int main(int argc, char** argv)
                 break;
 
             case out:
-                printf("Out: %d\n", mem[intAttr]);
+                printf("%d\n", mem[intAttr]);
                 break;
 
             case inp_asm:
@@ -575,13 +564,13 @@ int main(int argc, char** argv)
 
             //case statements are cursed (in c at least) 
             case ahm: ;
-                unsigned int allocSize = reg;
+                unsigned short int allocSize = reg;
                 
                 CHUNKLIST *insertBase = findSpace(allocSize, startChunk);
                 CHUNKLIST *newChunk = (CHUNKLIST*)malloc(sizeof(CHUNKLIST));
 
                 //insert the new chunk into the link list
-                int newChunkBasePtr = insertBase->ptr + insertBase->size;
+                unsigned int newChunkBasePtr = insertBase->ptr + insertBase->size;
                 newChunk->ptr =  newChunkBasePtr;
                 newChunk->size = allocSize;
                 newChunk->next = insertBase->next;
@@ -589,19 +578,23 @@ int main(int argc, char** argv)
                 //link the new chunk as the next for the insertBase, to fully insert the new chunk and override the last next (which now is the next->next)
                 insertBase->next = newChunk;
 
-                acc = (unsigned int)newChunkBasePtr | (1 << 15);
+                acc = newChunkBasePtr | (1 << 15);
+
+                //printChunkList(startChunk);
+                //printf("end\n");
 
                 break;
 
             case fhm: ;
-                unsigned int freeSize = reg;
-                unsigned int freeBase = acc & ~(1 << 15);
+                unsigned short int freeSize = reg;
+                unsigned short int freeBaseRaw = acc;
+                unsigned short int freeBase = freeBaseRaw & ~(1 << 15);
 
                 //the previouse is needed to delete the next chunk from the list, because the next pointer of the previouse need to be overritten to exclude the chunk for the list
                 CHUNKLIST* foundPreviouseChunk = findPrevChunkByPtrAndSize(freeBase, freeSize, startChunk);
                 CHUNKLIST* foundChunk = NULL;
 
-                if (foundPreviouseChunk)
+                if (foundPreviouseChunk != NULL)
                 {
                     foundChunk = foundPreviouseChunk->next;
 
@@ -609,11 +602,18 @@ int main(int argc, char** argv)
                     foundPreviouseChunk->next = foundChunk->next;
                     free(foundChunk);
 
+                    //clear memory
+                    for (int i = 0; i < freeSize; i++) mem[freeBaseRaw + i] = 0;
+
+
                 }
                 else
                 {
                     printf("Error: Chunk (ptr: %d, size: %d) could not be found", freeBase, freeSize);
                 }
+
+                //printChunkList(startChunk);
+                //printf("end\n");
 
                 break;
 
@@ -678,7 +678,6 @@ int main(int argc, char** argv)
             default:
                 break;
         }
-
 
 
     }
